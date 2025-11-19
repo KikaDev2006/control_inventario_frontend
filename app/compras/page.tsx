@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { Plus, Trash2, ShoppingCart, Calendar, Edit2, Pencil, Package, Check, X } from 'lucide-react';
 import { Nav } from '@/components/layout/nav';
@@ -17,23 +17,6 @@ import { comprasPorRango, crearCompra, eliminarCompra, editarDetalle } from '@/l
 import { Compra, Tienda, Proveedor, DetalleCompra } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
-
-interface InventarioItem {
-  id: number;
-  producto: string;
-  col1Inv: number;
-  col1Compra: number;
-  col1Anterior: number;
-  col2Inv: number;
-  col2Compra: number;
-  col2Anterior: number;
-  col3Inv: number;
-  col3Compra: number;
-  col3Anterior: number;
-  fecha1: string;
-  fecha2: string;
-  fecha3: string;
-}
 
 export default function ComprasPage() {
   const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
@@ -63,50 +46,10 @@ export default function ComprasPage() {
   const [fechaCompra, setFechaCompra] = useState('');
   const [cantidad, setCantidad] = useState('');
   const [inventarioAnterior, setInventarioAnterior] = useState('');
-  
-  const mockInventario: InventarioItem[] = [
-    { 
-      id: 1, 
-      producto: 'Producto A', 
-      col1Inv: 50, col1Compra: 20, col1Anterior: 65, fecha1: '2024-01-15',
-      col2Inv: 70, col2Compra: 15, col2Anterior: 85, fecha2: '2024-02-10',
-      col3Inv: 85, col3Compra: 30, col3Anterior: 100, fecha3: '2024-03-05'
-    },
-    { 
-      id: 2, 
-      producto: 'Producto B', 
-      col1Inv: 30, col1Compra: 15, col1Anterior: 42, fecha1: '2024-01-20',
-      col2Inv: 45, col2Compra: 25, col2Anterior: 60, fecha2: '2024-02-15',
-      col3Inv: 70, col3Compra: 20, col3Anterior: 85, fecha3: '2024-03-10'
-    },
-    { 
-      id: 3, 
-      producto: 'Producto C', 
-      col1Inv: 100, col1Compra: 40, col1Anterior: 120, fecha1: '2024-01-25',
-      col2Inv: 140, col2Compra: 50, col2Anterior: 170, fecha2: '2024-02-20',
-      col3Inv: 190, col3Compra: 35, col3Anterior: 210, fecha3: '2024-03-15'
-    },
-    { 
-      id: 4, 
-      producto: 'Producto D', 
-      col1Inv: 75, col1Compra: 25, col1Anterior: 90, fecha1: '2024-02-01',
-      col2Inv: 100, col2Compra: 30, col2Anterior: 120, fecha2: '2024-02-25',
-      col3Inv: 130, col3Compra: 40, col3Anterior: 160, fecha3: '2024-03-20'
-    },
-    { 
-      id: 5, 
-      producto: 'Producto E', 
-      col1Inv: 60, col1Compra: 30, col1Anterior: 78, fecha1: '2024-02-05',
-      col2Inv: 90, col2Compra: 35, col2Anterior: 113, fecha2: '2024-03-01',
-      col3Inv: 125, col3Compra: 25, col3Anterior: 138, fecha3: '2024-03-25'
-    },
-  ];
-
-  const [inventario, setInventario] = useState<InventarioItem[]>(mockInventario);
+  const { toast } = useToast();
+  const [inventario, setInventario] = useState<any[]>([]);
   const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
   const [editValue, setEditValue] = useState('');
-  const { toast } = useToast();
-
   const handleCreateCompra = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -176,7 +119,6 @@ export default function ComprasPage() {
       });
     }
   };
-
   const openDetalleEdit = (detalle: DetalleCompra) => {
     setEditingDetalle(detalle);
     setCantidad(detalle.cantidad.toString());
@@ -193,25 +135,81 @@ export default function ComprasPage() {
     mutate();
   };
 
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // Build inventory table from compras (use up to 3 latest compras)
+  useEffect(() => {
+    if (!compras || compras.length === 0) {
+      setInventario([]);
+      return;
+    }
+
+    const sorted = [...compras].sort((a, b) => (b.fecha_compra || '').localeCompare(a.fecha_compra || ''));
+    const cols = sorted.slice(0, 3);
+
+    const map = new Map<number, any>();
+
+    cols.forEach((compra, colIdx) => {
+      compra.detalles.forEach((detalle) => {
+        const pid = detalle.producto;
+        if (!map.has(pid)) {
+          map.set(pid, {
+            id: pid,
+            producto: detalle.producto_nombre || `Producto ${pid}`,
+          });
+        }
+
+        const item = map.get(pid);
+        const idx = colIdx + 1;
+        item[`fecha${idx}`] = compra.fecha_compra;
+        item[`col${idx}Compra`] = detalle.cantidad;
+        item[`col${idx}Anterior`] = detalle.inventario_anterior;
+        item[`col${idx}Inv`] = detalle.inventario_anterior + detalle.cantidad;
+        item[`col${idx}DetalleId`] = detalle.id;
+      });
+    });
+
+    setInventario(Array.from(map.values()));
+  }, [compras]);
+
   const handleCellClick = (id: number, field: string, currentValue: number) => {
     setEditingCell({ id, field });
     setEditValue(currentValue.toString());
   };
 
-  const handleCellSave = (id: number, field: string) => {
-    setInventario(inventario.map(item =>
-      item.id === id ? { 
-        ...item, 
-        [field]: parseInt(editValue) || 0
-      } : item
-    ));
+  const handleCellSave = async (itemId: number, field: string) => {
+    const newValue = parseInt(editValue) || 0;
+    const updated = inventario.map((it) => {
+      if (it.id !== itemId) return it;
+      return { ...it, [field]: newValue };
+    });
+    setInventario(updated);
     setEditingCell(null);
-    toast({ title: 'Actualizado' });
-  };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+    // If this cell maps to a detalle id, call API to update
+    const colMatch = field.match(/col(\d+)Compra/);
+    if (colMatch) {
+      const colIdx = colMatch[1];
+      const item = inventario.find((i) => i.id === itemId);
+      const detalleId = item?.[`col${colIdx}DetalleId`];
+      const inventarioAnteriorVal = item?.[`col${colIdx}Anterior`] || 0;
+      if (detalleId) {
+        try {
+          await editarDetalle(detalleId, {
+            cantidad: newValue,
+            inventario_anterior: inventarioAnteriorVal,
+          });
+          toast({ title: 'Actualizado', description: 'Detalle actualizado correctamente' });
+          mutate();
+        } catch (error) {
+          toast({ title: 'Error', description: 'No fue posible actualizar detalle', variant: 'destructive' });
+        }
+      }
+    }
   };
 
   return (
@@ -333,200 +331,7 @@ export default function ComprasPage() {
           </CardContent>
         </Card>
 
-        <div className="rounded-lg border bg-card overflow-x-auto shadow-sm mx-0 sm:mx-2">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {/* 3 inventario columns */}
-                <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                  {formatDate(inventario[0]?.fecha1)}
-                </TableHead>
-                <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                  {formatDate(inventario[0]?.fecha2)}
-                </TableHead>
-                <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                  {formatDate(inventario[0]?.fecha3)}
-                </TableHead>
-                {/* Product column */}
-                <TableHead className="bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-200 text-center font-semibold text-[10px] sm:text-sm p-0.5 sm:p-1 min-w-[70px] sm:min-w-[100px]">
-                  Producto
-                </TableHead>
-                {/* 3 compra columns */}
-                <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                  {formatDate(inventario[0]?.fecha1)}
-                </TableHead>
-                <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                  {formatDate(inventario[0]?.fecha2)}
-                </TableHead>
-                <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                  {formatDate(inventario[0]?.fecha3)}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {inventario.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
-                    {editingCell?.id === item.id && editingCell?.field === 'col1Inv' ? (
-                      <Input
-                        type="number"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => handleCellSave(item.id, 'col1Inv')}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col1Inv')}
-                        className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                        autoFocus
-                      />
-                    ) : (
-                      <span 
-                        onClick={() => handleCellClick(item.id, 'col1Inv', item.col1Inv)}
-                        className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
-                      >
-                        {item.col1Inv}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
-                    {editingCell?.id === item.id && editingCell?.field === 'col2Inv' ? (
-                      <Input
-                        type="number"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => handleCellSave(item.id, 'col2Inv')}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col2Inv')}
-                        className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                        autoFocus
-                      />
-                    ) : (
-                      <span 
-                        onClick={() => handleCellClick(item.id, 'col2Inv', item.col2Inv)}
-                        className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
-                      >
-                        {item.col2Inv}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
-                    {editingCell?.id === item.id && editingCell?.field === 'col3Inv' ? (
-                      <Input
-                        type="number"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => handleCellSave(item.id, 'col3Inv')}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col3Inv')}
-                        className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                        autoFocus
-                      />
-                    ) : (
-                      <span 
-                        onClick={() => handleCellClick(item.id, 'col3Inv', item.col3Inv)}
-                        className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
-                      >
-                        {item.col3Inv}
-                      </span>
-                    )}
-                  </TableCell>
-                  
-                  {/* Product name */}
-                  <TableCell className="bg-green-50/60 dark:bg-green-950/30 font-medium text-center text-[10px] sm:text-sm p-0.5 sm:p-1">
-                    {item.producto}
-                  </TableCell>
-                  
-                  <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
-                    <div className="flex flex-col items-center gap-0">
-                      {editingCell?.id === item.id && editingCell?.field === 'col1Compra' ? (
-                        <Input
-                          type="number"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleCellSave(item.id, 'col1Compra')}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col1Compra')}
-                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                          autoFocus
-                        />
-                      ) : (
-                        <>
-                          <span 
-                            onClick={() => handleCellClick(item.id, 'col1Compra', item.col1Compra)}
-                            className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
-                          >
-                            {item.col1Compra}
-                          </span>
-                          <span className="text-[7px] sm:text-[8px] text-muted-foreground">
-                            ({item.col1Anterior - item.col1Inv})
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
-                    <div className="flex flex-col items-center gap-0">
-                      {editingCell?.id === item.id && editingCell?.field === 'col2Compra' ? (
-                        <Input
-                          type="number"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleCellSave(item.id, 'col2Compra')}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col2Compra')}
-                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                          autoFocus
-                        />
-                      ) : (
-                        <>
-                          <span 
-                            onClick={() => handleCellClick(item.id, 'col2Compra', item.col2Compra)}
-                            className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
-                          >
-                            {item.col2Compra}
-                          </span>
-                          <span className="text-[7px] sm:text-[8px] text-muted-foreground">
-                            ({item.col2Anterior - item.col2Inv})
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
-                    <div className="flex flex-col items-center gap-0">
-                      {editingCell?.id === item.id && editingCell?.field === 'col3Compra' ? (
-                        <Input
-                          type="number"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleCellSave(item.id, 'col3Compra')}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col3Compra')}
-                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                          autoFocus
-                        />
-                      ) : (
-                        <>
-                          <span 
-                            onClick={() => handleCellClick(item.id, 'col3Compra', item.col3Compra)}
-                            className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
-                          >
-                            {item.col3Compra}
-                          </span>
-                          <span className="text-[7px] sm:text-[8px] text-muted-foreground">
-                            ({item.col3Anterior - item.col3Inv})
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="mt-2 sm:mt-3 flex justify-end px-2 sm:px-4">
-          <div className="rounded-lg bg-muted px-2 py-1 sm:px-3 sm:py-1.5 text-[10px] sm:text-sm">
-            <span className="text-muted-foreground">Total: </span>
-            <span className="font-semibold text-primary">
-              {inventario.reduce((sum, item) => sum + item.col1Compra + item.col2Compra + item.col3Compra, 0)}
-            </span>
-          </div>
-        </div>
+        
 
         {isLoading ? (
           <Card className="animate-pulse mt-6">
@@ -534,73 +339,185 @@ export default function ComprasPage() {
               <div className="h-6 w-32 rounded bg-muted" />
             </CardHeader>
           </Card>
-        ) : compras && compras.length > 0 ? (
-          <div className="space-y-6 mt-6">
-            {compras.map((compra) => (
-              <Card key={compra.id} className="overflow-hidden">
-                <CardHeader className="bg-card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-chart-1/20 p-2">
-                        <ShoppingCart className="h-5 w-5 text-chart-1" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg">Compra #{compra.id}</CardTitle>
-                        <CardDescription className="flex items-center gap-2">
-                          <Calendar className="h-3 w-3" />
-                          {compra.fecha_compra}
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => compra.id && handleDelete(compra.id)}
-                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    >
-                      <Trash2 className="mr-2 h-3 w-3" />
-                      Eliminar
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Producto</TableHead>
-                        <TableHead className="text-right">Cantidad</TableHead>
-                        <TableHead className="text-right">Inv. Anterior</TableHead>
-                        <TableHead className="text-right">Inv. Nuevo</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {compra.detalles.map((detalle) => (
-                        <TableRow key={detalle.id}>
-                          <TableCell className="font-medium">
-                            {detalle.producto_nombre || `Producto ${detalle.producto}`}
-                          </TableCell>
-                          <TableCell className="text-right">{detalle.cantidad}</TableCell>
-                          <TableCell className="text-right">{detalle.inventario_anterior}</TableCell>
-                          <TableCell className="text-right font-semibold text-primary">
-                            {detalle.inventario_anterior + detalle.cantidad}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openDetalleEdit(detalle)}
+        ) : inventario && inventario.length > 0 ? (
+          <div className="rounded-lg border bg-card overflow-x-auto shadow-sm mx-0 sm:mx-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                    {formatDate(inventario[0]?.fecha1)}
+                  </TableHead>
+                  <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                    {formatDate(inventario[0]?.fecha2)}
+                  </TableHead>
+                  <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                    {formatDate(inventario[0]?.fecha3)}
+                  </TableHead>
+                  <TableHead className="bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-200 text-center font-semibold text-[10px] sm:text-sm p-0.5 sm:p-1 min-w-[70px] sm:min-w-[100px]">
+                    Producto
+                  </TableHead>
+                  <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                    {formatDate(inventario[0]?.fecha1)}
+                  </TableHead>
+                  <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                    {formatDate(inventario[0]?.fecha2)}
+                  </TableHead>
+                  <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                    {formatDate(inventario[0]?.fecha3)}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inventario.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
+                      {editingCell?.id === item.id && editingCell?.field === 'col1Inv' ? (
+                        <Input
+                          type="number"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleCellSave(item.id, 'col1Inv')}
+                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col1Inv')}
+                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                          autoFocus
+                        />
+                      ) : (
+                        <span 
+                          onClick={() => handleCellClick(item.id, 'col1Inv', item.col1Inv || 0)}
+                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
+                        >
+                          {item.col1Inv ?? 0}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
+                      {editingCell?.id === item.id && editingCell?.field === 'col2Inv' ? (
+                        <Input
+                          type="number"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleCellSave(item.id, 'col2Inv')}
+                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col2Inv')}
+                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                          autoFocus
+                        />
+                      ) : (
+                        <span 
+                          onClick={() => handleCellClick(item.id, 'col2Inv', item.col2Inv || 0)}
+                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
+                        >
+                          {item.col2Inv ?? 0}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
+                      {editingCell?.id === item.id && editingCell?.field === 'col3Inv' ? (
+                        <Input
+                          type="number"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleCellSave(item.id, 'col3Inv')}
+                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col3Inv')}
+                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                          autoFocus
+                        />
+                      ) : (
+                        <span 
+                          onClick={() => handleCellClick(item.id, 'col3Inv', item.col3Inv || 0)}
+                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
+                        >
+                          {item.col3Inv ?? 0}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="bg-green-50/60 dark:bg-green-950/30 font-medium text-center text-[10px] sm:text-sm p-0.5 sm:p-1">
+                      {item.producto}
+                    </TableCell>
+                    <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
+                      <div className="flex flex-col items-center gap-0">
+                        {editingCell?.id === item.id && editingCell?.field === 'col1Compra' ? (
+                          <Input
+                            type="number"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => handleCellSave(item.id, 'col1Compra')}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col1Compra')}
+                            className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <span 
+                              onClick={() => handleCellClick(item.id, 'col1Compra', item.col1Compra || 0)}
+                              className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
                             >
-                              <Edit2 className="h-3 w-3" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            ))}
+                              {item.col1Compra ?? 0}
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] text-muted-foreground">
+                              ({(item.col1Anterior ?? 0) - (item.col1Inv ?? 0)})
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
+                      <div className="flex flex-col items-center gap-0">
+                        {editingCell?.id === item.id && editingCell?.field === 'col2Compra' ? (
+                          <Input
+                            type="number"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => handleCellSave(item.id, 'col2Compra')}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col2Compra')}
+                            className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <span 
+                              onClick={() => handleCellClick(item.id, 'col2Compra', item.col2Compra || 0)}
+                              className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
+                            >
+                              {item.col2Compra ?? 0}
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] text-muted-foreground">
+                              ({(item.col2Anterior ?? 0) - (item.col2Inv ?? 0)})
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
+                      <div className="flex flex-col items-center gap-0">
+                        {editingCell?.id === item.id && editingCell?.field === 'col3Compra' ? (
+                          <Input
+                            type="number"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => handleCellSave(item.id, 'col3Compra')}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col3Compra')}
+                            className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <span 
+                              onClick={() => handleCellClick(item.id, 'col3Compra', item.col3Compra || 0)}
+                              className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
+                            >
+                              {item.col3Compra ?? 0}
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] text-muted-foreground">
+                              ({(item.col3Anterior ?? 0) - (item.col3Inv ?? 0)})
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         ) : (
           <Card className="mt-6">

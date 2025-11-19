@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import useSWR from 'swr';
 import { Plus, Pencil, Trash2, Package, Check, X } from 'lucide-react';
 import { Nav } from '@/components/layout/nav';
 import { Button } from '@/components/ui/button';
@@ -8,44 +9,34 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Producto, Tienda, Proveedor } from '@/lib/types';
+import { listarTiendas } from '@/lib/api/tiendas';
+import { listarProveedores } from '@/lib/api/proveedores';
+import { listarProductos, crearProducto, actualizarProducto, eliminarProducto } from '@/lib/api/productos';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function ProductosPage() {
-  const mockTiendas: Tienda[] = [
-    { id: 1, nombre: 'Tienda Centro' },
-    { id: 2, nombre: 'Tienda Norte' },
-  ];
-
-  const mockProveedores: Proveedor[] = [
-    { id: 1, nombre: 'Proveedor ABC', tienda: 1 },
-    { id: 2, nombre: 'Proveedor XYZ', tienda: 1 },
-    { id: 3, nombre: 'Proveedor 123', tienda: 2 },
-  ];
-
-  const mockProductos: Producto[] = [
-    { id: 1, nombre: 'Producto A', proveedor: 1 },
-    { id: 2, nombre: 'Producto B', proveedor: 1 },
-    { id: 3, nombre: 'Producto C', proveedor: 2 },
-    { id: 4, nombre: 'Producto D', proveedor: 3 },
-  ];
-
-  const [productos, setProductos] = useState<Producto[]>(mockProductos);
+  const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
   const [selectedTienda, setSelectedTienda] = useState<number | null>(null);
+  const { data: proveedores } = useSWR<Proveedor[] | null>(
+    selectedTienda ? `proveedores-${selectedTienda}` : null,
+    () => (selectedTienda ? listarProveedores(selectedTienda) : Promise.resolve([]))
+  );
+
   const [selectedProveedor, setSelectedProveedor] = useState<number | null>(null);
+  const { data: productos, mutate: mutateProductos } = useSWR<Producto[] | null>(
+    selectedProveedor ? `productos-${selectedProveedor}` : null,
+    () => (selectedProveedor ? listarProductos(selectedProveedor) : Promise.resolve([]))
+  );
+  
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingNombre, setEditingNombre] = useState('');
   const [creatingNew, setCreatingNew] = useState(false);
   const [newNombre, setNewNombre] = useState('');
   const { toast } = useToast();
 
-  const filteredProveedores = selectedTienda
-    ? mockProveedores.filter(p => p.tienda === selectedTienda)
-    : mockProveedores;
-
-  const filteredProductos = selectedProveedor
-    ? productos.filter(p => p.proveedor === selectedProveedor)
-    : productos;
+  const filteredProveedores = proveedores || [];
+  const filteredProductos = productos || [];
 
   const handleEdit = (producto: Producto) => {
     setEditingId(producto.id!);
@@ -54,26 +45,34 @@ export default function ProductosPage() {
 
   const handleSaveEdit = () => {
     if (!editingNombre.trim()) return;
-    setProductos(productos.map(p => 
-      p.id === editingId ? { ...p, nombre: editingNombre } : p
-    ));
-    setEditingId(null);
-    toast({ title: 'Producto actualizado' });
+    if (!editingId) return;
+    actualizarProducto(editingId, { nombre: editingNombre })
+      .then(() => mutateProductos())
+      .then(() => {
+        setEditingId(null);
+        toast({ title: 'Producto actualizado' });
+      })
+      .catch(() => toast({ title: 'Error al actualizar', variant: 'destructive' }));
   };
 
   const handleCreate = () => {
     if (!newNombre.trim() || !selectedProveedor) return;
-    const newId = Math.max(...productos.map(p => p.id || 0)) + 1;
-    setProductos([...productos, { id: newId, nombre: newNombre, proveedor: selectedProveedor }]);
-    setNewNombre('');
-    setCreatingNew(false);
-    toast({ title: 'Producto creado' });
+    crearProducto({ nombre: newNombre, proveedor_id: selectedProveedor })
+      .then(() => mutateProductos())
+      .then(() => {
+        setNewNombre('');
+        setCreatingNew(false);
+        toast({ title: 'Producto creado' });
+      })
+      .catch(() => toast({ title: 'Error al crear producto', variant: 'destructive' }));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar este producto?')) return;
-    setProductos(productos.filter(p => p.id !== id));
-    toast({ title: 'Producto eliminado' });
+    eliminarProducto(id)
+      .then(() => mutateProductos())
+      .then(() => toast({ title: 'Producto eliminado' }))
+      .catch(() => toast({ title: 'Error al eliminar', variant: 'destructive' }));
   };
 
   return (
@@ -99,7 +98,7 @@ export default function ProductosPage() {
               <SelectValue placeholder="Filtrar tienda" />
             </SelectTrigger>
             <SelectContent>
-              {mockTiendas.map((tienda) => (
+              {(tiendas || []).map((tienda) => (
                 <SelectItem key={tienda.id} value={tienda.id!.toString()}>
                   {tienda.nombre}
                 </SelectItem>
@@ -174,7 +173,7 @@ export default function ProductosPage() {
                       <div>
                         <div className="font-medium">{producto.nombre}</div>
                         <div className="text-xs text-muted-foreground">
-                          {mockProveedores.find(p => p.id === producto.proveedor)?.nombre}
+                          {proveedores?.find(p => p.id === producto.proveedor)?.nombre}
                         </div>
                       </div>
                     </div>

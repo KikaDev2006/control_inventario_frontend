@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import useSWR from 'swr';
 import { Plus, Pencil, Trash2, Users, Check, X } from 'lucide-react';
 import { Nav } from '@/components/layout/nav';
 import { Button } from '@/components/ui/button';
@@ -8,32 +9,25 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Proveedor, Tienda } from '@/lib/types';
+import { listarTiendas } from '@/lib/api/tiendas';
+import { listarProveedores, crearProveedor, actualizarProveedor, eliminarProveedor } from '@/lib/api/proveedores';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function ProveedoresPage() {
-  const mockTiendas: Tienda[] = [
-    { id: 1, nombre: 'Tienda Centro' },
-    { id: 2, nombre: 'Tienda Norte' },
-  ];
-
-  const mockProveedores: Proveedor[] = [
-    { id: 1, nombre: 'Proveedor ABC', tienda: 1 },
-    { id: 2, nombre: 'Proveedor XYZ', tienda: 1 },
-    { id: 3, nombre: 'Proveedor 123', tienda: 2 },
-  ];
-
-  const [proveedores, setProveedores] = useState<Proveedor[]>(mockProveedores);
+  const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
   const [selectedTienda, setSelectedTienda] = useState<number | null>(null);
+  const { data: proveedores, mutate: mutateProveedores } = useSWR<Proveedor[] | null>(
+    selectedTienda ? `proveedores-${selectedTienda}` : null,
+    () => (selectedTienda ? listarProveedores(selectedTienda) : Promise.resolve([]))
+  );
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingNombre, setEditingNombre] = useState('');
   const [creatingNew, setCreatingNew] = useState(false);
   const [newNombre, setNewNombre] = useState('');
   const { toast } = useToast();
 
-  const filteredProveedores = selectedTienda 
-    ? proveedores.filter(p => p.tienda === selectedTienda)
-    : proveedores;
+  const filteredProveedores = proveedores || [];
 
   const handleEdit = (proveedor: Proveedor) => {
     setEditingId(proveedor.id!);
@@ -42,26 +36,34 @@ export default function ProveedoresPage() {
 
   const handleSaveEdit = () => {
     if (!editingNombre.trim()) return;
-    setProveedores(proveedores.map(p => 
-      p.id === editingId ? { ...p, nombre: editingNombre } : p
-    ));
-    setEditingId(null);
-    toast({ title: 'Proveedor actualizado' });
+    if (!editingId) return;
+    actualizarProveedor(editingId, { nombre: editingNombre })
+      .then(() => mutateProveedores())
+      .then(() => {
+        setEditingId(null);
+        toast({ title: 'Proveedor actualizado' });
+      })
+      .catch(() => toast({ title: 'Error al actualizar', variant: 'destructive' }));
   };
 
   const handleCreate = () => {
     if (!newNombre.trim() || !selectedTienda) return;
-    const newId = Math.max(...proveedores.map(p => p.id || 0)) + 1;
-    setProveedores([...proveedores, { id: newId, nombre: newNombre, tienda: selectedTienda }]);
-    setNewNombre('');
-    setCreatingNew(false);
-    toast({ title: 'Proveedor creado' });
+    crearProveedor({ nombre: newNombre, tienda_id: selectedTienda })
+      .then(() => mutateProveedores())
+      .then(() => {
+        setNewNombre('');
+        setCreatingNew(false);
+        toast({ title: 'Proveedor creado' });
+      })
+      .catch(() => toast({ title: 'Error al crear proveedor', variant: 'destructive' }));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar este proveedor?')) return;
-    setProveedores(proveedores.filter(p => p.id !== id));
-    toast({ title: 'Proveedor eliminado' });
+    eliminarProveedor(id)
+      .then(() => mutateProveedores())
+      .then(() => toast({ title: 'Proveedor eliminado' }))
+      .catch(() => toast({ title: 'Error al eliminar', variant: 'destructive' }));
   };
 
   return (
@@ -84,7 +86,7 @@ export default function ProveedoresPage() {
               <SelectValue placeholder="Filtrar por tienda" />
             </SelectTrigger>
             <SelectContent>
-              {mockTiendas.map((tienda) => (
+              {(tiendas || []).map((tienda) => (
                 <SelectItem key={tienda.id} value={tienda.id!.toString()}>
                   {tienda.nombre}
                 </SelectItem>
@@ -143,7 +145,7 @@ export default function ProveedoresPage() {
                       <div>
                         <div className="font-medium">{proveedor.nombre}</div>
                         <div className="text-xs text-muted-foreground">
-                          {mockTiendas.find(t => t.id === proveedor.tienda)?.nombre}
+                          {tiendas?.find(t => t.id === proveedor.tienda)?.nombre}
                         </div>
                       </div>
                     </div>

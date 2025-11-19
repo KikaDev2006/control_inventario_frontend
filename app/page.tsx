@@ -13,13 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function TiendasPage() {
-  const mockTiendas: Tienda[] = [
-    { id: 1, nombre: 'Tienda Centro' },
-    { id: 2, nombre: 'Tienda Norte' },
-    { id: 3, nombre: 'Tienda Sur' },
-  ];
-
-  const [tiendas, setTiendas] = useState<Tienda[]>(mockTiendas);
+  const { data: tiendas, mutate } = useSWR<Tienda[]>('tiendas', listarTiendas);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingNombre, setEditingNombre] = useState('');
   const [creatingNew, setCreatingNew] = useState(false);
@@ -27,18 +21,20 @@ export default function TiendasPage() {
   const { toast } = useToast();
 
   const handleEdit = (tienda: Tienda) => {
-    setEditingId(tienda.id!);
+    setEditingId(tienda.id || null);
     setEditingNombre(tienda.nombre);
   };
 
   const handleSaveEdit = () => {
-    if (!editingNombre.trim()) return;
-    setTiendas(tiendas.map(t => 
-      t.id === editingId ? { ...t, nombre: editingNombre } : t
-    ));
-    setEditingId(null);
-    setEditingNombre('');
-    toast({ title: 'Tienda actualizada' });
+    if (!editingNombre.trim() || !editingId) return;
+    actualizarTienda(editingId, { nombre: editingNombre })
+      .then(() => mutate())
+      .then(() => {
+        setEditingId(null);
+        setEditingNombre('');
+        toast({ title: 'Tienda actualizada' });
+      })
+      .catch(() => toast({ title: 'Error al actualizar', variant: 'destructive' }));
   };
 
   const handleCancelEdit = () => {
@@ -48,17 +44,22 @@ export default function TiendasPage() {
 
   const handleCreate = () => {
     if (!newNombre.trim()) return;
-    const newId = Math.max(...tiendas.map(t => t.id || 0)) + 1;
-    setTiendas([...tiendas, { id: newId, nombre: newNombre }]);
-    setNewNombre('');
-    setCreatingNew(false);
-    toast({ title: 'Tienda creada' });
+    crearTienda({ nombre: newNombre })
+      .then(() => mutate())
+      .then(() => {
+        setNewNombre('');
+        setCreatingNew(false);
+        toast({ title: 'Tienda creada' });
+      })
+      .catch(() => toast({ title: 'Error al crear tienda', variant: 'destructive' }));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar esta tienda?')) return;
-    setTiendas(tiendas.filter(t => t.id !== id));
-    toast({ title: 'Tienda eliminada' });
+    eliminarTienda(id)
+      .then(() => mutate())
+      .then(() => toast({ title: 'Tienda eliminada' }))
+      .catch(() => toast({ title: 'Error al eliminar', variant: 'destructive' }));
   };
 
   return (
@@ -96,7 +97,7 @@ export default function TiendasPage() {
         )}
 
         <div className="space-y-2">
-          {tiendas.map((tienda) => (
+          {(tiendas || []).map((tienda) => (
             <Card key={tienda.id} className="hover:border-primary/50 transition-colors">
               <CardContent className="pt-4">
                 {editingId === tienda.id ? (
