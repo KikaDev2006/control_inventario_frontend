@@ -14,6 +14,7 @@ import { listarProveedores } from '@/lib/api/proveedores';
 import { listarProductos, crearProducto, actualizarProducto, eliminarProducto } from '@/lib/api/productos';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { toastSuccess, toastError } from '@/lib/toast-helper';
 
 export default function ProductosPage() {
   const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
@@ -62,9 +63,9 @@ export default function ProductosPage() {
       .then(() => mutateProductos())
       .then(() => {
         setEditingId(null);
-        toast({ title: 'Producto actualizado' });
+        toastSuccess({ title: 'Producto actualizado' });
       })
-      .catch(() => toast({ title: 'Error al actualizar', variant: 'destructive' }));
+      .catch((error) => toastError(error));
   };
 
   const handleCreate = () => {
@@ -74,17 +75,17 @@ export default function ProductosPage() {
       .then(() => {
         setNewNombre('');
         setCreatingNew(false);
-        toast({ title: 'Producto creado' });
+        toastSuccess({ title: 'Producto creado' });
       })
-      .catch(() => toast({ title: 'Error al crear producto', variant: 'destructive' }));
+      .catch((error) => toastError(error));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar este producto?')) return;
     eliminarProducto(id)
       .then(() => mutateProductos())
-      .then(() => toast({ title: 'Producto eliminado' }))
-      .catch(() => toast({ title: 'Error al eliminar', variant: 'destructive' }));
+      .then(() => toastSuccess({ title: 'Producto eliminado' }))
+      .catch((error) => toastError(error));
   };
 
   return (
@@ -98,42 +99,52 @@ export default function ProductosPage() {
           </Button>
         </div>
 
-        <div className="mb-4 grid gap-2 sm:grid-cols-2">
-          <Select
-            value={selectedTienda?.toString() || ''}
-            onValueChange={(value) => {
-              setSelectedTienda(parseInt(value));
-              setSelectedProveedor(null);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Filtrar tienda" />
-            </SelectTrigger>
-            <SelectContent>
-              {(tiendas || []).map((tienda) => (
-                <SelectItem key={tienda.id} value={tienda.id!.toString()}>
-                  {tienda.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={selectedProveedor?.toString() || ''}
-            onValueChange={(value) => setSelectedProveedor(parseInt(value))}
-            disabled={!selectedTienda}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Filtrar proveedor" />
-            </SelectTrigger>
-            <SelectContent>
-              {filteredProveedores.map((proveedor) => (
-                <SelectItem key={proveedor.id} value={proveedor.id!.toString()}>
-                  {proveedor.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Card className="mb-3 bg-blue-50">
+          <CardContent className="py-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Tienda</label>
+                <Select
+                  value={selectedTienda?.toString() || ''}
+                  onValueChange={(value) => {
+                    setSelectedTienda(parseInt(value));
+                    setSelectedProveedor(null);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona tienda" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(tiendas || []).map((tienda) => (
+                      <SelectItem key={tienda.id} value={tienda.id!.toString()}>
+                        {tienda.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Proveedor</label>
+                <Select
+                  value={selectedProveedor?.toString() || ''}
+                  onValueChange={(value) => setSelectedProveedor(parseInt(value))}
+                  disabled={!selectedTienda}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredProveedores.map((proveedor) => (
+                      <SelectItem key={proveedor.id} value={proveedor.id!.toString()}>
+                        {proveedor.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {creatingNew && (
           <Card className="mb-4 border-primary">

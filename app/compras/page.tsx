@@ -18,11 +18,19 @@ import { comprasPorRango, crearCompra, eliminarCompra, editarDetalle, crearDetal
 import { Compra, Tienda, Proveedor, DetalleCompra } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { toastSuccess, toastError } from '@/lib/toast-helper';
 
 export default function ComprasPage() {
   const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
   const [selectedTienda, setSelectedTienda] = useState<number | null>(null);
   const [selectedProveedor, setSelectedProveedor] = useState<number | null>(null);
+  
+  // Auto-select primera tienda cuando carga
+  useEffect(() => {
+    if (!selectedTienda && tiendas && tiendas.length > 0) {
+      setSelectedTienda(tiendas[0].id ?? null);
+    }
+  }, [tiendas]);
   
   const { data: proveedores } = useSWR(
     selectedTienda ? `proveedores-${selectedTienda}` : null,
@@ -40,10 +48,14 @@ export default function ComprasPage() {
   const [fechaFin, setFechaFin] = useState('');
   const [limit, setLimit] = useState(3);
 
+  // sanitize limit (avoid passing NaN) and only fetch when a proveedor is selected
+  const safeLimit = Number.isFinite(limit) ? limit : undefined;
+  const shouldFetchCompras = selectedProveedor != null;
+
   const { data: compras, mutate, isLoading } = useSWR(
-    // key depends on filters so SWR refetches when tienda/proveedor change
-    ['compras', selectedTienda, selectedProveedor, fechaInicio, fechaFin, limit],
-    () => comprasPorRango(fechaInicio || undefined, fechaFin || undefined, limit, selectedTienda ?? undefined, selectedProveedor ?? undefined),
+    // Only fetch when proveedor is selected; otherwise skip request
+    shouldFetchCompras ? ['compras', selectedTienda, selectedProveedor, fechaInicio, fechaFin, safeLimit] : null,
+    () => comprasPorRango(fechaInicio || undefined, fechaFin || undefined, safeLimit, selectedTienda ?? undefined, selectedProveedor ?? undefined),
     { refreshInterval: 5000 }
   );
 
@@ -84,7 +96,7 @@ export default function ComprasPage() {
         proveedor_id: parseInt(proveedorId),
         fecha_compra: fechaCompra,
       });
-      toast({
+      toastSuccess({
         title: 'Compra creada',
         description: 'La compra se creó correctamente con detalles en cero',
       });
@@ -94,11 +106,7 @@ export default function ComprasPage() {
       setFechaCompra('');
       setSelectedTienda(null);
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Hubo un error al crear la compra',
-        variant: 'destructive',
-      });
+      toastError(error);
     }
   };
 
@@ -111,7 +119,7 @@ export default function ComprasPage() {
         cantidad: parseInt(cantidad),
         inventario_anterior: parseInt(inventarioAnterior),
       });
-      toast({
+      toastSuccess({
         title: 'Detalle actualizado',
         description: 'El detalle se actualizó correctamente',
       });
@@ -121,11 +129,7 @@ export default function ComprasPage() {
       setCantidad('');
       setInventarioAnterior('');
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Hubo un error al actualizar el detalle',
-        variant: 'destructive',
-      });
+      toastError(error);
     }
   };
 
@@ -134,16 +138,12 @@ export default function ComprasPage() {
     try {
       await eliminarCompra(id);
       mutate();
-      toast({
+      toastSuccess({
         title: 'Compra eliminada',
         description: 'La compra se eliminó correctamente',
       });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'No se pudo eliminar la compra',
-        variant: 'destructive',
-      });
+      toastError(error);
     }
   };
   const openDetalleEdit = (detalle: DetalleCompra) => {
@@ -251,12 +251,12 @@ export default function ComprasPage() {
         } catch (error) {
           // eslint-disable-next-line no-console
           console.error('[handleCellSave] editarDetalle error', error);
-          toast({ title: 'Error', description: 'No fue posible actualizar detalle', variant: 'destructive' });
+          toastError(error);
         }
       } else {
         // eslint-disable-next-line no-console
         console.warn('[handleCellSave] compra edit - detalleId NOT found', { itemId, field, detalleId });
-        toast({ title: 'Advertencia', description: 'No se encontró el detalle para actualizar' });
+        toastError(new Error('No se encontró el detalle para actualizar'));
       }
     } else if (invMatch) {
       const colIdx = parseInt(invMatch[1], 10);
@@ -287,12 +287,12 @@ export default function ComprasPage() {
         } catch (error) {
           // eslint-disable-next-line no-console
           console.error('[handleCellSave] editarDetalle error (inv)', error);
-          toast({ title: 'Error', description: 'No fue posible actualizar detalle', variant: 'destructive' });
+          toastError(error);
         }
       } else {
         // eslint-disable-next-line no-console
         console.warn('[handleCellSave] inv edit - detalleId NOT found', { itemId, field, detalleId });
-        toast({ title: 'Advertencia', description: 'No se encontró el detalle para actualizar' });
+        toastError({ title: 'Advertencia', description: 'No se encontró el detalle para actualizar' });
       }
     }
   };
@@ -301,17 +301,17 @@ export default function ComprasPage() {
   const handleDeleteDetalleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDetalleToDelete) {
-      toast({ title: 'Error', description: 'Seleccione un detalle', variant: 'destructive' });
+      toastError({ title: 'Error', description: 'Seleccione un detalle' });
       return;
     }
     try {
       await eliminarDetalle(selectedDetalleToDelete);
-      toast({ title: 'Detalle eliminado', description: 'El detalle se eliminó correctamente' });
+      toastSuccess({ title: 'Detalle eliminado', description: 'El detalle se eliminó correctamente' });
       setOpenDeleteProductDialog(false);
       setSelectedDetalleToDelete(null);
       mutate();
     } catch (error) {
-      toast({ title: 'Error', description: 'No se pudo eliminar el detalle', variant: 'destructive' });
+      toastError(error);
     }
   };
 
@@ -319,7 +319,7 @@ export default function ComprasPage() {
   const handleAddDetalleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompraForDetailAdd || !selectedProductoToAdd) {
-      toast({ title: 'Error', description: 'Seleccione compra y producto', variant: 'destructive' });
+      toastError({ title: 'Error', description: 'Seleccione compra y producto' });
       return;
     }
     try {
@@ -328,14 +328,14 @@ export default function ComprasPage() {
         cantidad: addCantidad,
         inventario_anterior: addInventarioAnterior,
       });
-      toast({ title: 'Detalle creado', description: 'El detalle se creó correctamente' });
+      toastSuccess({ title: 'Detalle creado', description: 'El detalle se creó correctamente' });
       setOpenAddProductDialog(false);
       setSelectedProductoToAdd(null);
       setAddCantidad(0);
       setAddInventarioAnterior(0);
       mutate();
     } catch (error) {
-      toast({ title: 'Error', description: 'No se pudo crear el detalle', variant: 'destructive' });
+      toastError(error);
     }
   };
 
@@ -414,71 +414,78 @@ export default function ComprasPage() {
           </Dialog>
         </div>
 
-        <Card className="mb-3 sm:mb-4 mx-2 sm:mx-4">
-          <CardContent className="pt-2 pb-2 sm:pt-3 sm:pb-2">
-            <div className="grid gap-1.5 sm:gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-              <div className="space-y-0.5">
-                <Label className="text-[10px] sm:text-xs">Tienda</Label>
-                <Select value={selectedTienda?.toString() || ''} onValueChange={(v) => { setSelectedTienda(v ? parseInt(v) : null); setSelectedProveedor(null); }}>
-                  <SelectTrigger className="h-8 w-full">
-                    <SelectValue placeholder="Selecciona tienda" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(tiendas || []).map((t) => (
-                      <SelectItem key={t.id} value={t.id!.toString()}>{t.nombre}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        <Card className="mb-3 mx-2 sm:mx-4 bg-blue-50">
+          <CardContent className="py-3">
+            <div className="space-y-3">
+              {/* Fila 1: Tienda + Proveedor */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Tienda</Label>
+                  <Select value={selectedTienda?.toString() || ''} onValueChange={(v) => { setSelectedTienda(v ? parseInt(v) : null); setSelectedProveedor(null); }}>
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="Selecciona tienda" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(tiendas || []).map((t) => (
+                        <SelectItem key={t.id} value={t.id!.toString()}>{t.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Proveedor</Label>
+                  <Select value={selectedProveedor?.toString() || ''} onValueChange={(v) => setSelectedProveedor(v ? parseInt(v) : null)} disabled={!selectedTienda}>
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="Selecciona proveedor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(proveedores || []).map((p) => (
+                        <SelectItem key={p.id} value={p.id!.toString()}>{p.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-0.5">
-                <Label className="text-[10px] sm:text-xs">Proveedor</Label>
-                <Select value={selectedProveedor?.toString() || ''} onValueChange={(v) => setSelectedProveedor(v ? parseInt(v) : null)} disabled={!selectedTienda}>
-                  <SelectTrigger className="h-8 w-full">
-                    <SelectValue placeholder="Selecciona proveedor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(proveedores || []).map((p) => (
-                      <SelectItem key={p.id} value={p.id!.toString()}>{p.nombre}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-0.5">
-                <Label htmlFor="fecha-inicio" className="text-[10px] sm:text-xs">Inicio</Label>
-                <Input
-                  id="fecha-inicio"
-                  type="date"
-                  value={fechaInicio}
-                  onChange={(e) => setFechaInicio(e.target.value)}
-                  className="h-8 text-[10px] sm:text-xs px-1.5 sm:px-2 w-full"
-                />
-              </div>
-              <div className="space-y-0.5">
-                <Label htmlFor="fecha-fin" className="text-[10px] sm:text-xs">Fin</Label>
-                <Input
-                  id="fecha-fin"
-                  type="date"
-                  value={fechaFin}
-                  onChange={(e) => setFechaFin(e.target.value)}
-                  className="h-8 text-[10px] sm:text-xs px-1.5 sm:px-2 w-full"
-                />
-              </div>
-              <div className="space-y-0.5">
-                <Label htmlFor="limit" className="text-[10px] sm:text-xs">Límite</Label>
-                <Input
-                  id="limit"
-                  type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(parseInt(e.target.value))}
-                  min="1"
-                  max="100"
-                  className="h-8 text-[10px] sm:text-xs px-1.5 sm:px-2 w-full"
-                />
-              </div>
-              <div className="flex items-end">
-                <Button onClick={handleFilter} size="sm" className="h-8 w-full text-[10px] sm:text-xs">
-                  Filtrar
-                </Button>
+              
+              {/* Fila 2: Fechas + Límite + Filtrar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="fecha-inicio" className="text-xs">Inicio</Label>
+                  <Input
+                    id="fecha-inicio"
+                    type="date"
+                    value={fechaInicio}
+                    onChange={(e) => setFechaInicio(e.target.value)}
+                    className="h-9 text-xs px-2 w-full"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="fecha-fin" className="text-xs">Fin</Label>
+                  <Input
+                    id="fecha-fin"
+                    type="date"
+                    value={fechaFin}
+                    onChange={(e) => setFechaFin(e.target.value)}
+                    className="h-9 text-xs px-2 w-full"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="limit" className="text-xs">Límite</Label>
+                  <Input
+                    id="limit"
+                    type="number"
+                    value={limit}
+                    onChange={(e) => setLimit(parseInt(e.target.value))}
+                    min="1"
+                    max="100"
+                    className="h-9 text-xs px-2 w-full"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={handleFilter} size="sm" className="h-9 w-full text-xs">
+                    Filtrar
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>

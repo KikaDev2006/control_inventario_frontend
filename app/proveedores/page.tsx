@@ -13,6 +13,7 @@ import { listarTiendas } from '@/lib/api/tiendas';
 import { listarProveedores, crearProveedor, actualizarProveedor, eliminarProveedor } from '@/lib/api/proveedores';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { toastSuccess, toastError } from '@/lib/toast-helper';
 
 export default function ProveedoresPage() {
   const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
@@ -47,9 +48,9 @@ export default function ProveedoresPage() {
       .then(() => mutateProveedores())
       .then(() => {
         setEditingId(null);
-        toast({ title: 'Proveedor actualizado' });
+        toastSuccess({ title: 'Proveedor actualizado' });
       })
-      .catch(() => toast({ title: 'Error al actualizar', variant: 'destructive' }));
+      .catch((error) => toastError(error));
   };
 
   const handleCreate = () => {
@@ -59,17 +60,17 @@ export default function ProveedoresPage() {
       .then(() => {
         setNewNombre('');
         setCreatingNew(false);
-        toast({ title: 'Proveedor creado' });
+        toastSuccess({ title: 'Proveedor creado' });
       })
-      .catch(() => toast({ title: 'Error al crear proveedor', variant: 'destructive' }));
+      .catch((error) => toastError(error));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar este proveedor?')) return;
     eliminarProveedor(id)
       .then(() => mutateProveedores())
-      .then(() => toast({ title: 'Proveedor eliminado' }))
-      .catch(() => toast({ title: 'Error al eliminar', variant: 'destructive' }));
+      .then(() => toastSuccess({ title: 'Proveedor eliminado' }))
+      .catch((error) => toastError(error));
   };
 
   return (
@@ -83,23 +84,28 @@ export default function ProveedoresPage() {
           </Button>
         </div>
 
-        <div className="mb-4">
-          <Select
-            value={selectedTienda?.toString() || ''}
-            onValueChange={(value) => setSelectedTienda(parseInt(value))}
-          >
-            <SelectTrigger className="max-w-xs">
-              <SelectValue placeholder="Filtrar por tienda" />
-            </SelectTrigger>
-            <SelectContent>
-              {(tiendas || []).map((tienda) => (
-                <SelectItem key={tienda.id} value={tienda.id!.toString()}>
-                  {tienda.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Card className="mb-3 bg-blue-50">
+          <CardContent className="py-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Tienda</label>
+              <Select
+                value={selectedTienda?.toString() || ''}
+                onValueChange={(value) => setSelectedTienda(parseInt(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona tienda" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(tiendas || []).map((tienda) => (
+                    <SelectItem key={tienda.id} value={tienda.id!.toString()}>
+                      {tienda.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
         {creatingNew && (
           <Card className="mb-4 border-primary">

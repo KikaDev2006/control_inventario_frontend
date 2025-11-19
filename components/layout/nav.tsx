@@ -5,10 +5,10 @@ import { usePathname } from 'next/navigation';
 import { Store, Package, ShoppingCart, Users } from 'lucide-react';
 
 const navigation = [
-  { name: 'Tiendas', href: '/', icon: Store },
-  { name: 'Proveedores', href: '/proveedores', icon: Users },
-  { name: 'Productos', href: '/productos', icon: Package },
-  { name: 'Compras', href: '/compras', icon: ShoppingCart },
+  { name: 'Tiendas', href: '/', icon: Store, color: 'text-blue-500', activeColor: 'text-blue-600 bg-blue-50' },
+  { name: 'Proveedores', href: '/proveedores', icon: Users, color: 'text-purple-500', activeColor: 'text-purple-600 bg-purple-50' },
+  { name: 'Productos', href: '/productos', icon: Package, color: 'text-green-500', activeColor: 'text-green-600 bg-green-50' },
+  { name: 'Compras', href: '/compras', icon: ShoppingCart, color: 'text-orange-500', activeColor: 'text-orange-600 bg-orange-50' },
 ];
 
 export function Nav() {
@@ -16,28 +16,28 @@ export function Nav() {
 
   return (
     <nav className="border-b border-border bg-card">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-full px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
+          <div className="flex items-center gap-4 sm:gap-8 w-full">
+            <Link href="/" className="flex items-center gap-2 text-lg font-semibold flex-shrink-0">
               <Store className="h-6 w-6 text-primary" />
-              <span className="hidden sm:inline text-foreground">Control Inventario</span>
+              <span className="hidden lg:inline text-foreground">Control Inventario</span>
             </Link>
-            <div className="flex gap-1">
+            <div className="flex gap-2 sm:gap-4 flex-1 justify-evenly">
               {navigation.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`flex flex-col sm:flex-row items-center gap-1 sm:gap-2 rounded-lg px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-all ${
                       isActive
-                        ? 'bg-secondary text-foreground'
-                        : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                        ? `${item.activeColor} shadow-sm scale-110`
+                        : `${item.color} hover:bg-secondary/50 hover:scale-105`
                     }`}
                   >
-                    <item.icon className="h-4 w-4" />
-                    <span className="hidden sm:inline">{item.name}</span>
+                    <item.icon className="h-6 w-6 sm:h-7 sm:w-7" />
+                    <span className="text-[10px] sm:text-sm">{item.name}</span>
                   </Link>
                 );
               })}

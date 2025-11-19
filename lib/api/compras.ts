@@ -42,13 +42,13 @@ export async function comprasPorRango(
   params.append('limit', limit.toString());
   if (order) params.append('order', order);
 
-  // If both tiendaId and proveedorId are provided, call the path with both
-  if (typeof tiendaId === 'number' && typeof proveedorId === 'number') {
-    return apiRequest<Compra[]>(`/api/compra/rango/${tiendaId}/${proveedorId}/?${params.toString()}`);
+  // New route: /api/compra/rango/{proveedor_id}/
+  if (typeof proveedorId === 'number') {
+    return apiRequest<Compra[]>(`/api/compra/rango/${proveedorId}/?${params.toString()}`);
   }
 
-  // Fallback to generic rango endpoint
-  return apiRequest<Compra[]>(`/api/compra/rango/?${params.toString()}`);
+  // Fallback if no proveedor selected (empty list or throw)
+  return Promise.resolve([]);
 }
 
 export async function eliminarCompra(compraId: number): Promise<void> {

@@ -15,7 +15,21 @@ export async function apiRequest<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`API Error: ${response.statusText}`);
+    // Try to parse backend error message
+    let errorMessage = `API Error: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      if (errorData && errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData && errorData.detail) {
+        errorMessage = errorData.detail;
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      }
+    } catch {
+      // if parsing fails, use status text
+    }
+    throw new Error(errorMessage);
   }
 
   return response.json();

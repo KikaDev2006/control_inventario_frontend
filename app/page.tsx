@@ -11,6 +11,7 @@ import { listarTiendas, crearTienda, actualizarTienda, eliminarTienda } from '@/
 import { Tienda } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { toastSuccess, toastError } from '@/lib/toast-helper';
 
 export default function TiendasPage() {
   const { data: tiendas, mutate } = useSWR<Tienda[]>('tiendas', listarTiendas);
@@ -32,9 +33,9 @@ export default function TiendasPage() {
       .then(() => {
         setEditingId(null);
         setEditingNombre('');
-        toast({ title: 'Tienda actualizada' });
+        toastSuccess({ title: 'Tienda actualizada' });
       })
-      .catch(() => toast({ title: 'Error al actualizar', variant: 'destructive' }));
+      .catch((error) => toastError(error));
   };
 
   const handleCancelEdit = () => {
@@ -49,17 +50,17 @@ export default function TiendasPage() {
       .then(() => {
         setNewNombre('');
         setCreatingNew(false);
-        toast({ title: 'Tienda creada' });
+        toastSuccess({ title: 'Tienda creada' });
       })
-      .catch(() => toast({ title: 'Error al crear tienda', variant: 'destructive' }));
+      .catch((error) => toastError(error));
   };
 
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar esta tienda?')) return;
     eliminarTienda(id)
       .then(() => mutate())
-      .then(() => toast({ title: 'Tienda eliminada' }))
-      .catch(() => toast({ title: 'Error al eliminar', variant: 'destructive' }));
+      .then(() => toastSuccess({ title: 'Tienda eliminada' }))
+      .catch((error) => toastError(error));
   };
 
   return (
