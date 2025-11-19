@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { Plus, Pencil, Trash2, Users, Check, X } from 'lucide-react';
 import { Nav } from '@/components/layout/nav';
@@ -17,6 +17,12 @@ import { Toaster } from '@/components/ui/toaster';
 export default function ProveedoresPage() {
   const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
   const [selectedTienda, setSelectedTienda] = useState<number | null>(null);
+  // set first tienda by default when tiendas load
+  useEffect(() => {
+    if (!selectedTienda && tiendas && tiendas.length > 0) {
+      setSelectedTienda(tiendas[0].id ?? null);
+    }
+  }, [tiendas]);
   const { data: proveedores, mutate: mutateProveedores } = useSWR<Proveedor[] | null>(
     selectedTienda ? `proveedores-${selectedTienda}` : null,
     () => (selectedTienda ? listarProveedores(selectedTienda) : Promise.resolve([]))

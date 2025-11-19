@@ -240,6 +240,49 @@
         }
       }
     },
+    "/api/compra/detalle/crear/{compra_id}/": {
+      "post": {
+        "operationId": "compra_api_crear_detalle",
+        "summary": "Crear Detalle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "compra_id",
+            "schema": {
+              "title": "Compra Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetalleCompraSchema"
+                }
+              }
+            }
+          }
+        },
+        "description": "Crea un nuevo detalle de compra para una compra existente.",
+        "tags": [
+          "Compras"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetalleCompraInSchema"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/compra/detalle/editar/{detalle_id}/": {
       "patch": {
         "operationId": "compra_api_editar_detalle",
@@ -281,6 +324,75 @@
           },
           "required": true
         }
+      }
+    },
+    "/api/compra/compra/{compra}/": {
+      "patch": {
+        "operationId": "compra_api_actualizar_compra",
+        "summary": "Actualizar Compra",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "compra",
+            "schema": {
+              "title": "Compra",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompraSchema"
+                }
+              }
+            }
+          }
+        },
+        "description": "Actualiza una compra existente.",
+        "tags": [
+          "Compras"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompraUpdateSchema"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/compra/detalle/eliminar/{detalle_id}/": {
+      "delete": {
+        "operationId": "compra_api_eliminar_detalle",
+        "summary": "Eliminar Detalle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "detalle_id",
+            "schema": {
+              "title": "Detalle Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Elimina un detalle de compra existente.",
+        "tags": [
+          "Compras"
+        ]
       }
     },
     "/api/compra/eliminar/{compra_id}/": {
@@ -734,6 +846,34 @@
         "title": "CompraInSchema",
         "type": "object"
       },
+      "DetalleCompraInSchema": {
+        "properties": {
+          "compra_id": {
+            "title": "Compra Id",
+            "type": "integer"
+          },
+          "producto_id": {
+            "title": "Producto Id",
+            "type": "integer"
+          },
+          "cantidad": {
+            "title": "Cantidad",
+            "type": "integer"
+          },
+          "inventario_anterior": {
+            "title": "Inventario Anterior",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "compra_id",
+          "producto_id",
+          "cantidad",
+          "inventario_anterior"
+        ],
+        "title": "DetalleCompraInSchema",
+        "type": "object"
+      },
       "DetalleCompraUpdateSchema": {
         "properties": {
           "cantidad": {
@@ -750,6 +890,49 @@
           "inventario_anterior"
         ],
         "title": "DetalleCompraUpdateSchema",
+        "type": "object"
+      },
+      "CompraSchema": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "ID"
+          },
+          "proveedor": {
+            "title": "Proveedor",
+            "type": "integer"
+          },
+          "fecha_compra": {
+            "format": "date",
+            "title": "Fecha Compra",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proveedor"
+        ],
+        "title": "CompraSchema",
+        "type": "object"
+      },
+      "CompraUpdateSchema": {
+        "properties": {
+          "fecha_compra": {
+            "format": "date",
+            "title": "Fecha Compra",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fecha_compra"
+        ],
+        "title": "CompraUpdateSchema",
         "type": "object"
       },
       "ProveedorSchema": {

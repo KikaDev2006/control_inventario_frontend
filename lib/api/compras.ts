@@ -15,6 +15,19 @@ export async function editarDetalle(detalleId: number, data: DetalleCompraUpdate
   });
 }
 
+export async function crearDetalle(compraId: number, data: { producto_id: number; cantidad: number; inventario_anterior: number; }): Promise<DetalleCompra> {
+  return apiRequest<DetalleCompra>(`/api/compra/detalle/crear/${compraId}/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function eliminarDetalle(detalleId: number): Promise<void> {
+  return apiRequest<void>(`/api/compra/detalle/eliminar/${detalleId}/`, {
+    method: 'DELETE',
+  });
+}
+
 export async function comprasPorRango(
   fechaInicio?: string,
   fechaFin?: string,

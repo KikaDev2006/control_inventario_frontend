@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { listarTiendas } from '@/lib/api/tiendas';
 import { listarProveedores } from '@/lib/api/proveedores';
-import { comprasPorRango, crearCompra, eliminarCompra, editarDetalle } from '@/lib/api/compras';
+import { listarProductos } from '@/lib/api/productos';
+import { comprasPorRango, crearCompra, eliminarCompra, editarDetalle, crearDetalle, eliminarDetalle } from '@/lib/api/compras';
 import { Compra, Tienda, Proveedor, DetalleCompra } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
@@ -50,6 +51,23 @@ export default function ComprasPage() {
   const [inventario, setInventario] = useState<any[]>([]);
   const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [colsCompras, setColsCompras] = useState<Compra[]>([]);
+  // Detail dialog states (operate on compra detalles)
+  const [selectedCompraForDetailDelete, setSelectedCompraForDetailDelete] = useState<number | null>(null);
+  const [selectedDetalleToDelete, setSelectedDetalleToDelete] = useState<number | null>(null);
+
+  const [selectedCompraForDetailAdd, setSelectedCompraForDetailAdd] = useState<number | null>(null);
+  const [selectedProductoToAdd, setSelectedProductoToAdd] = useState<number | null>(null);
+  const [addCantidad, setAddCantidad] = useState<number>(0);
+  const [addInventarioAnterior, setAddInventarioAnterior] = useState<number>(0);
+  // Product management dialog states (operate on compra detalles)
+  const [openDeleteProductDialog, setOpenDeleteProductDialog] = useState(false);
+  const [openAddProductDialog, setOpenAddProductDialog] = useState(false);
+  const [selectedProveedorForProduct, setSelectedProveedorForProduct] = useState<number | null>(null);
+  const { data: productosForDialog } = useSWR(
+    selectedProveedorForProduct ? `productos-${selectedProveedorForProduct}` : null,
+    () => (selectedProveedorForProduct ? listarProductos(selectedProveedorForProduct) : Promise.resolve([]))
+  );
   const handleCreateCompra = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -148,8 +166,10 @@ export default function ComprasPage() {
       return;
     }
 
-    const sorted = [...compras].sort((a, b) => (b.fecha_compra || '').localeCompare(a.fecha_compra || ''));
-    const cols = sorted.slice(0, 3);
+    // sort ascending by date and take the last `limit` purchases so columns go left->right oldest->newest
+    const sortedAsc = [...compras].sort((a, b) => (a.fecha_compra || '').localeCompare(b.fecha_compra || ''));
+    const cols = sortedAsc.slice(Math.max(0, sortedAsc.length - limit));
+    setColsCompras(cols);
 
     const map = new Map<number, any>();
 
@@ -183,6 +203,9 @@ export default function ComprasPage() {
 
   const handleCellSave = async (itemId: number, field: string) => {
     const newValue = parseInt(editValue) || 0;
+    // Debug log: entry
+    // eslint-disable-next-line no-console
+    console.log('[handleCellSave] enter', { itemId, field, editValue, newValue });
     const updated = inventario.map((it) => {
       if (it.id !== itemId) return it;
       return { ...it, [field]: newValue };
@@ -191,24 +214,119 @@ export default function ComprasPage() {
     setEditingCell(null);
 
     // If this cell maps to a detalle id, call API to update
-    const colMatch = field.match(/col(\d+)Compra/);
-    if (colMatch) {
-      const colIdx = colMatch[1];
-      const item = inventario.find((i) => i.id === itemId);
+    const compraMatch = field.match(/col(\d+)Compra/);
+    const invMatch = field.match(/col(\d+)Inv/);
+
+    if (compraMatch) {
+      const colIdx = parseInt(compraMatch[1], 10);
+      const item = updated.find((i) => i.id === itemId);
       const detalleId = item?.[`col${colIdx}DetalleId`];
       const inventarioAnteriorVal = item?.[`col${colIdx}Anterior`] || 0;
       if (detalleId) {
+        // Debug log: detalle info
+        // eslint-disable-next-line no-console
+        console.log('[handleCellSave] compra edit - detalleId found', { detalleId, inventarioAnteriorVal, newValue });
         try {
           await editarDetalle(detalleId, {
             cantidad: newValue,
             inventario_anterior: inventarioAnteriorVal,
           });
-          toast({ title: 'Actualizado', description: 'Detalle actualizado correctamente' });
+          // Recompute inv for this column locally (anterior + compra)
+          const invField = `col${colIdx}Inv`;
+          const newInv = (inventarioAnteriorVal || 0) + newValue;
+          const newUpdated = updated.map((it) => it.id === itemId ? { ...it, [invField]: newInv } : it);
+          setInventario(newUpdated);
+          const t = toast({ title: 'Actualizado', description: 'Detalle actualizado correctamente' });
+          setTimeout(() => t.dismiss(), 500);
           mutate();
         } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error('[handleCellSave] editarDetalle error', error);
           toast({ title: 'Error', description: 'No fue posible actualizar detalle', variant: 'destructive' });
         }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[handleCellSave] compra edit - detalleId NOT found', { itemId, field, detalleId });
+        toast({ title: 'Advertencia', description: 'No se encontró el detalle para actualizar' });
       }
+    } else if (invMatch) {
+      const colIdx = parseInt(invMatch[1], 10);
+      const item = updated.find((i) => i.id === itemId);
+      const detalleId = item?.[`col${colIdx}DetalleId`];
+      const currentCompra = item?.[`col${colIdx}Compra`] || 0;
+      // When editing the inventory cell we treat the input as the new inventory (inv = anterior + compra)
+      // so inventario_anterior = newInv - compra
+      const newInv = newValue;
+      const newInventarioAnterior = newInv - currentCompra;
+      if (detalleId) {
+        // Debug log: detalle info for inv edit
+        // eslint-disable-next-line no-console
+        console.log('[handleCellSave] inv edit - detalleId found', { detalleId, currentCompra, newInv, newInventarioAnterior });
+        try {
+          await editarDetalle(detalleId, {
+            cantidad: currentCompra,
+            inventario_anterior: newInventarioAnterior,
+          });
+          // Update state fields for anterior and inv
+          const anteriorField = `col${colIdx}Anterior`;
+          const invField = `col${colIdx}Inv`;
+          const newUpdated = updated.map((it) => it.id === itemId ? { ...it, [anteriorField]: newInventarioAnterior, [invField]: newInv } : it);
+          setInventario(newUpdated);
+          const t = toast({ title: 'Actualizado', description: 'Detalle actualizado correctamente' });
+          setTimeout(() => t.dismiss(), 500);
+          mutate();
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error('[handleCellSave] editarDetalle error (inv)', error);
+          toast({ title: 'Error', description: 'No fue posible actualizar detalle', variant: 'destructive' });
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[handleCellSave] inv edit - detalleId NOT found', { itemId, field, detalleId });
+        toast({ title: 'Advertencia', description: 'No se encontró el detalle para actualizar' });
+      }
+    }
+  };
+
+  // Delete detalle (from a specific compra)
+  const handleDeleteDetalleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDetalleToDelete) {
+      toast({ title: 'Error', description: 'Seleccione un detalle', variant: 'destructive' });
+      return;
+    }
+    try {
+      await eliminarDetalle(selectedDetalleToDelete);
+      toast({ title: 'Detalle eliminado', description: 'El detalle se eliminó correctamente' });
+      setOpenDeleteProductDialog(false);
+      setSelectedDetalleToDelete(null);
+      mutate();
+    } catch (error) {
+      toast({ title: 'Error', description: 'No se pudo eliminar el detalle', variant: 'destructive' });
+    }
+  };
+
+  // Add detalle to a compra
+  const handleAddDetalleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompraForDetailAdd || !selectedProductoToAdd) {
+      toast({ title: 'Error', description: 'Seleccione compra y producto', variant: 'destructive' });
+      return;
+    }
+    try {
+      await crearDetalle(selectedCompraForDetailAdd, {
+        producto_id: selectedProductoToAdd,
+        cantidad: addCantidad,
+        inventario_anterior: addInventarioAnterior,
+      });
+      toast({ title: 'Detalle creado', description: 'El detalle se creó correctamente' });
+      setOpenAddProductDialog(false);
+      setSelectedProductoToAdd(null);
+      setAddCantidad(0);
+      setAddInventarioAnterior(0);
+      mutate();
+    } catch (error) {
+      toast({ title: 'Error', description: 'No se pudo crear el detalle', variant: 'destructive' });
     }
   };
 
@@ -340,185 +458,131 @@ export default function ComprasPage() {
             </CardHeader>
           </Card>
         ) : inventario && inventario.length > 0 ? (
-          <div className="rounded-lg border bg-card overflow-x-auto shadow-sm mx-0 sm:mx-2">
+          <>
+            {/* toolbar removed per UX request (icons were duplicated) */}
+
+            <div className="rounded-lg border bg-card overflow-x-auto shadow-sm mx-0 sm:mx-2">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                    {formatDate(inventario[0]?.fecha1)}
-                  </TableHead>
-                  <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                    {formatDate(inventario[0]?.fecha2)}
-                  </TableHead>
-                  <TableHead className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                    {formatDate(inventario[0]?.fecha3)}
-                  </TableHead>
+                  {colsCompras.map((c, idx) => (
+                    <TableHead key={`inv-${c.id}`} className="bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-200 w-[50px] sm:w-16 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                      {formatDate(c.fecha_compra)}
+                    </TableHead>
+                  ))}
                   <TableHead className="bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-200 text-center font-semibold text-[10px] sm:text-sm p-0.5 sm:p-1 min-w-[70px] sm:min-w-[100px]">
                     Producto
                   </TableHead>
-                  <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                    {formatDate(inventario[0]?.fecha1)}
-                  </TableHead>
-                  <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                    {formatDate(inventario[0]?.fecha2)}
-                  </TableHead>
-                  <TableHead className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
-                    {formatDate(inventario[0]?.fecha3)}
-                  </TableHead>
+                  {colsCompras.map((c, idx) => (
+                    <TableHead key={`compra-h-${c.id}`} className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-200 w-[60px] sm:w-20 text-center text-[10px] sm:text-xs p-0.5 sm:p-1">
+                      <div className="flex flex-col items-center gap-1">
+                        <Button size="icon" variant="ghost" className="h-6 w-6 p-0" onClick={() => c?.id && handleDelete(c.id)} title="Eliminar compra">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                        <span className="text-[10px] sm:text-xs">{formatDate(c.fecha_compra)}</span>
+                      </div>
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {inventario.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
-                      {editingCell?.id === item.id && editingCell?.field === 'col1Inv' ? (
-                        <Input
-                          type="number"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleCellSave(item.id, 'col1Inv')}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col1Inv')}
-                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                          autoFocus
-                        />
-                      ) : (
-                        <span 
-                          onClick={() => handleCellClick(item.id, 'col1Inv', item.col1Inv || 0)}
-                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
-                        >
-                          {item.col1Inv ?? 0}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
-                      {editingCell?.id === item.id && editingCell?.field === 'col2Inv' ? (
-                        <Input
-                          type="number"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleCellSave(item.id, 'col2Inv')}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col2Inv')}
-                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                          autoFocus
-                        />
-                      ) : (
-                        <span 
-                          onClick={() => handleCellClick(item.id, 'col2Inv', item.col2Inv || 0)}
-                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
-                        >
-                          {item.col2Inv ?? 0}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
-                      {editingCell?.id === item.id && editingCell?.field === 'col3Inv' ? (
-                        <Input
-                          type="number"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleCellSave(item.id, 'col3Inv')}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col3Inv')}
-                          className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                          autoFocus
-                        />
-                      ) : (
-                        <span 
-                          onClick={() => handleCellClick(item.id, 'col3Inv', item.col3Inv || 0)}
-                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
-                        >
-                          {item.col3Inv ?? 0}
-                        </span>
-                      )}
-                    </TableCell>
+                    {/* inventory columns (left) */}
+                    {colsCompras.map((c, idx) => {
+                      const field = `col${idx + 1}Inv`;
+                      const editingField = editingCell?.field === field && editingCell?.id === item.id;
+                      return (
+                        <TableCell key={`invcell-${item.id}-${idx}`} className="bg-blue-50/50 dark:bg-blue-950/20 text-center p-0.5 sm:p-1">
+                                {editingField ? (
+                                  <Input
+                                    type="number"
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                    onBlur={() => handleCellSave(item.id, field)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, field)}
+                                    className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  (() => {
+                                    const value = item[field] ?? 0;
+                                    const display = value === 0 ? '-' : String(value);
+                                    return (
+                                      <div className="flex flex-col items-center gap-0">
+                                        <span
+                                          onClick={() => handleCellClick(item.id, field, value)}
+                                          className="text-blue-700 dark:text-blue-300 font-semibold text-[10px] sm:text-sm cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/30 px-0.5 py-0.5 rounded"
+                                        >
+                                          {display}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()
+                                )}
+                        </TableCell>
+                      );
+                    })}
+
                     <TableCell className="bg-green-50/60 dark:bg-green-950/30 font-medium text-center text-[10px] sm:text-sm p-0.5 sm:p-1">
                       {item.producto}
                     </TableCell>
-                    <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
-                      <div className="flex flex-col items-center gap-0">
-                        {editingCell?.id === item.id && editingCell?.field === 'col1Compra' ? (
-                          <Input
-                            type="number"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() => handleCellSave(item.id, 'col1Compra')}
-                            onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col1Compra')}
-                            className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                            autoFocus
-                          />
-                        ) : (
-                          <>
-                            <span 
-                              onClick={() => handleCellClick(item.id, 'col1Compra', item.col1Compra || 0)}
-                              className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
-                            >
-                              {item.col1Compra ?? 0}
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] text-muted-foreground">
-                              ({(item.col1Anterior ?? 0) - (item.col1Inv ?? 0)})
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
-                      <div className="flex flex-col items-center gap-0">
-                        {editingCell?.id === item.id && editingCell?.field === 'col2Compra' ? (
-                          <Input
-                            type="number"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() => handleCellSave(item.id, 'col2Compra')}
-                            onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col2Compra')}
-                            className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                            autoFocus
-                          />
-                        ) : (
-                          <>
-                            <span 
-                              onClick={() => handleCellClick(item.id, 'col2Compra', item.col2Compra || 0)}
-                              className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
-                            >
-                              {item.col2Compra ?? 0}
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] text-muted-foreground">
-                              ({(item.col2Anterior ?? 0) - (item.col2Inv ?? 0)})
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
-                      <div className="flex flex-col items-center gap-0">
-                        {editingCell?.id === item.id && editingCell?.field === 'col3Compra' ? (
-                          <Input
-                            type="number"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() => handleCellSave(item.id, 'col3Compra')}
-                            onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, 'col3Compra')}
-                            className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
-                            autoFocus
-                          />
-                        ) : (
-                          <>
-                            <span 
-                              onClick={() => handleCellClick(item.id, 'col3Compra', item.col3Compra || 0)}
-                              className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
-                            >
-                              {item.col3Compra ?? 0}
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] text-muted-foreground">
-                              ({(item.col3Anterior ?? 0) - (item.col3Inv ?? 0)})
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
+
+                    {/* compra columns (right) */}
+                    {colsCompras.map((c, idx) => {
+                      const compraField = `col${idx + 1}Compra`;
+                      const anteriorField = `col${idx + 1}Anterior`;
+                      const editingField = editingCell?.field === compraField && editingCell?.id === item.id;
+                      return (
+                        <TableCell key={`compcell-${item.id}-${idx}`} className="bg-red-50/50 dark:bg-red-950/20 text-center p-0.5 sm:p-1">
+                          <div className="flex flex-col items-center gap-0">
+                                {editingField ? (
+                              <Input
+                                type="number"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => handleCellSave(item.id, compraField)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleCellSave(item.id, compraField)}
+                                className="w-[45px] sm:w-12 h-5 sm:h-6 text-[10px] sm:text-xs mx-auto text-center p-0"
+                                autoFocus
+                              />
+                            ) : (
+                              <>
+                                {(() => {
+                                  const compraVal = item[compraField] ?? 0;
+                                  const compraDisplay = compraVal === 0 ? '-' : String(compraVal);
+                                  const currInv = item[`col${idx + 1}Inv`];
+                                  const prevInv = idx > 0 ? item[`col${idx}Inv`] : undefined;
+                                  const showSuggestion = typeof prevInv === 'number' && typeof currInv === 'number' && prevInv > currInv;
+                                  const suggestion = showSuggestion ? (prevInv - currInv) : null;
+                                  return (
+                                    <>
+                                      <span
+                                        onClick={() => handleCellClick(item.id, compraField, item[compraField] || 0)}
+                                        className="font-semibold text-red-700 dark:text-red-300 text-[10px] sm:text-sm cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/30 px-0.5 py-0.5 rounded"
+                                      >
+                                        {compraDisplay}
+                                      </span>
+                                      {showSuggestion ? (
+                                        <span className="text-[8px] text-green-600 dark:text-green-400">{suggestion}</span>
+                                      ) : (
+                                        <span className="text-[7px] sm:text-[8px] text-muted-foreground">&nbsp;</span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      );
+                    })}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
+          </>
         ) : (
           <Card className="mt-6">
             <CardContent className="flex flex-col items-center justify-center py-16">
@@ -583,6 +647,107 @@ export default function ComprasPage() {
                 Cancelar
               </Button>
               <Button type="submit">Actualizar</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialogo: Eliminar Producto */}
+      <Dialog open={openDeleteProductDialog} onOpenChange={setOpenDeleteProductDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar Producto</DialogTitle>
+            <DialogDescription>Selecciona tienda, proveedor y producto a eliminar.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleDeleteDetalleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Compra</Label>
+              <Select value={selectedCompraForDetailDelete?.toString() || ''} onValueChange={(v) => { setSelectedCompraForDetailDelete(v ? parseInt(v) : null); setSelectedDetalleToDelete(null); }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una compra" />
+                </SelectTrigger>
+                <SelectContent>
+                  {colsCompras?.map((c) => (
+                    <SelectItem key={c.id} value={c.id!.toString()}>{formatDate(c.fecha_compra)} - #{c.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Detalle (producto)</Label>
+              <Select value={selectedDetalleToDelete?.toString() || ''} onValueChange={(v) => setSelectedDetalleToDelete(v ? parseInt(v) : null)} disabled={!selectedCompraForDetailDelete}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un detalle" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(colsCompras.find((c) => c.id === selectedCompraForDetailDelete)?.detalles || []).map((d) => (
+                    <SelectItem key={d.id} value={d.id!.toString()}>{d.producto_nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpenDeleteProductDialog(false)}>Cancelar</Button>
+              <Button type="submit">Eliminar detalle</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialogo: Añadir Producto */}
+      <Dialog open={openAddProductDialog} onOpenChange={setOpenAddProductDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Añadir Producto</DialogTitle>
+            <DialogDescription>Selecciona proveedor y nombre del producto a crear.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddDetalleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Compra</Label>
+              <Select value={selectedCompraForDetailAdd?.toString() || ''} onValueChange={(v) => {
+                const id = v ? parseInt(v) : null;
+                setSelectedCompraForDetailAdd(id);
+                setSelectedProductoToAdd(null);
+                // set proveedor so productosForDialog can load
+                const compra = colsCompras.find((c) => c.id === id);
+                if (compra) setSelectedProveedorForProduct(compra.proveedor as number);
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una compra" />
+                </SelectTrigger>
+                <SelectContent>
+                  {colsCompras?.map((c) => (
+                    <SelectItem key={c.id} value={c.id!.toString()}>{formatDate(c.fecha_compra)} - #{c.id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Producto</Label>
+              <Select value={selectedProductoToAdd?.toString() || ''} onValueChange={(v) => setSelectedProductoToAdd(v ? parseInt(v) : null)} disabled={!selectedProveedorForProduct}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un producto" />
+                </SelectTrigger>
+                <SelectContent>
+                  {productosForDialog?.map((pr) => (
+                    <SelectItem key={pr.id} value={pr.id!.toString()}>{pr.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 grid grid-cols-2 gap-2">
+              <div>
+                <Label>Cantidad</Label>
+                <Input type="number" value={addCantidad} onChange={(e) => setAddCantidad(parseInt(e.target.value || '0'))} />
+              </div>
+              <div>
+                <Label>Inventario Anterior</Label>
+                <Input type="number" value={addInventarioAnterior} onChange={(e) => setAddInventarioAnterior(parseInt(e.target.value || '0'))} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpenAddProductDialog(false)}>Cancelar</Button>
+              <Button type="submit">Crear detalle</Button>
             </div>
           </form>
         </DialogContent>
