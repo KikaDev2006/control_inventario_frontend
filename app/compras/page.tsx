@@ -22,19 +22,28 @@ import { Toaster } from '@/components/ui/toaster';
 export default function ComprasPage() {
   const { data: tiendas } = useSWR<Tienda[]>('tiendas', listarTiendas);
   const [selectedTienda, setSelectedTienda] = useState<number | null>(null);
+  const [selectedProveedor, setSelectedProveedor] = useState<number | null>(null);
   
   const { data: proveedores } = useSWR(
     selectedTienda ? `proveedores-${selectedTienda}` : null,
     () => selectedTienda ? listarProveedores(selectedTienda) : null
   );
 
+  // default select first proveedor when proveedores load (if none selected)
+  useEffect(() => {
+    if ((selectedProveedor === null || selectedProveedor === undefined) && proveedores && proveedores.length > 0) {
+      setSelectedProveedor(proveedores[0].id ?? null);
+    }
+  }, [proveedores]);
+
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [limit, setLimit] = useState(3);
 
   const { data: compras, mutate, isLoading } = useSWR(
-    'compras',
-    () => comprasPorRango(fechaInicio || undefined, fechaFin || undefined, limit),
+    // key depends on filters so SWR refetches when tienda/proveedor change
+    ['compras', selectedTienda, selectedProveedor, fechaInicio, fechaFin, limit],
+    () => comprasPorRango(fechaInicio || undefined, fechaFin || undefined, limit, selectedTienda ?? undefined, selectedProveedor ?? undefined),
     { refreshInterval: 5000 }
   );
 
@@ -407,7 +416,33 @@ export default function ComprasPage() {
 
         <Card className="mb-3 sm:mb-4 mx-2 sm:mx-4">
           <CardContent className="pt-2 pb-2 sm:pt-3 sm:pb-2">
-            <div className="grid gap-1.5 sm:gap-3 grid-cols-4">
+            <div className="grid gap-1.5 sm:gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+              <div className="space-y-0.5">
+                <Label className="text-[10px] sm:text-xs">Tienda</Label>
+                <Select value={selectedTienda?.toString() || ''} onValueChange={(v) => { setSelectedTienda(v ? parseInt(v) : null); setSelectedProveedor(null); }}>
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue placeholder="Selecciona tienda" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(tiendas || []).map((t) => (
+                      <SelectItem key={t.id} value={t.id!.toString()}>{t.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-[10px] sm:text-xs">Proveedor</Label>
+                <Select value={selectedProveedor?.toString() || ''} onValueChange={(v) => setSelectedProveedor(v ? parseInt(v) : null)} disabled={!selectedTienda}>
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue placeholder="Selecciona proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(proveedores || []).map((p) => (
+                      <SelectItem key={p.id} value={p.id!.toString()}>{p.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-0.5">
                 <Label htmlFor="fecha-inicio" className="text-[10px] sm:text-xs">Inicio</Label>
                 <Input
@@ -415,7 +450,7 @@ export default function ComprasPage() {
                   type="date"
                   value={fechaInicio}
                   onChange={(e) => setFechaInicio(e.target.value)}
-                  className="h-7 text-[10px] sm:text-xs px-1.5 sm:px-2"
+                  className="h-8 text-[10px] sm:text-xs px-1.5 sm:px-2 w-full"
                 />
               </div>
               <div className="space-y-0.5">
@@ -425,7 +460,7 @@ export default function ComprasPage() {
                   type="date"
                   value={fechaFin}
                   onChange={(e) => setFechaFin(e.target.value)}
-                  className="h-7 text-[10px] sm:text-xs px-1.5 sm:px-2"
+                  className="h-8 text-[10px] sm:text-xs px-1.5 sm:px-2 w-full"
                 />
               </div>
               <div className="space-y-0.5">
@@ -437,11 +472,11 @@ export default function ComprasPage() {
                   onChange={(e) => setLimit(parseInt(e.target.value))}
                   min="1"
                   max="100"
-                  className="h-7 text-[10px] sm:text-xs px-1.5 sm:px-2"
+                  className="h-8 text-[10px] sm:text-xs px-1.5 sm:px-2 w-full"
                 />
               </div>
               <div className="flex items-end">
-                <Button onClick={handleFilter} size="sm" className="h-7 w-full text-[10px] sm:text-xs">
+                <Button onClick={handleFilter} size="sm" className="h-8 w-full text-[10px] sm:text-xs">
                   Filtrar
                 </Button>
               </div>
