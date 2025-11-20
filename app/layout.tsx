@@ -7,9 +7,16 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Gestor de Tiendas - Control de Inventario',
-  description: 'Sistema de gestión de inventario para tiendas',
+  title: 'Control de Inventario',
+  description: 'Sistema de control de inventario y compras',
   generator: 'v0.app',
+  manifest: '/manifest.json',
+  themeColor: '#3b82f6',
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+  },
   icons: {
     icon: [
       {
@@ -25,7 +32,15 @@ export const metadata: Metadata = {
         type: 'image/svg+xml',
       },
     ],
-    apple: '/apple-icon.png',
+    apple: [
+      { url: '/apple-icon.png' },
+      { url: '/images/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Inventario',
   },
 }
 
